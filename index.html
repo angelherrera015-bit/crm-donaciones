@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CRM Donaciones</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef3f3;--ink:#16292b;--mut:#5d7274;--line:#d3dfdf;--pri:#0f5c63;--pri2:#0b4950;--card:#fff;--bad:#b3261e;--ok:#2e7d4f}
+*{box-sizing:border-box}
+body{margin:0;font-family:Figtree,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:var(--pri);color:#fff;font-weight:600}
+button:hover{background:var(--pri2)}
+button.sec{background:#fff;color:var(--pri);border:1px solid var(--line)}
+button.del{background:#fff;color:var(--bad);border:1px solid var(--line)}
+:focus-visible{outline:3px solid #7cc4cb;outline-offset:2px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}
+#login{min-height:100vh;display:grid;place-items:center;padding:20px}
+#login form{background:#fff;padding:28px;border-radius:14px;width:100%;max-width:360px;border:1px solid var(--line)}
+#login h1{margin:0 0 4px;font-size:1.5rem}
+#login p{margin:0 0 12px;color:var(--mut)}
+#login button{width:100%;margin-top:16px}
+#err{color:var(--bad);min-height:1.2em;font-size:.9rem;margin-top:8px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;background:var(--pri);color:#fff}
+header h1{margin:0;font-size:1.15rem;flex:1;min-width:140px}
+header button{background:rgba(255,255,255,.16)}
+header button:hover{background:rgba(255,255,255,.28)}
+header small{opacity:.85}
+.bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;align-items:center}
+.bar input{max-width:260px}
+.tabs{display:flex;gap:6px;margin-right:auto}
+.tabs button{background:transparent;color:var(--mut);border:1px solid transparent}
+.tabs button.on{background:#fff;color:var(--pri);border-color:var(--line)}
+.board{display:flex;gap:12px;padding:0 16px 24px;overflow-x:auto;align-items:flex-start}
+.col{flex:0 0 250px;background:#e1ebeb;border-radius:12px;padding:10px;min-height:120px}
