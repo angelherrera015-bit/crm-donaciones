@@ -36,3 +36,202 @@ header small{opacity:.85}
 .tabs button.on{background:#fff;color:var(--pri);border-color:var(--line)}
 .board{display:flex;gap:12px;padding:0 16px 24px;overflow-x:auto;align-items:flex-start}
 .col{flex:0 0 250px;background:#e1ebeb;border-radius:12px;padding:10px;min-height:120px}
+.col h3{margin:2px 4px 10px;font-size:.95rem;display:flex;justify-content:space-between}
+.col h3 span{color:var(--mut);font-weight:400}
+.col.over{outline:2px dashed var(--pri)}
+.card{background:var(--card);border-radius:10px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);cursor:pointer}
+.card b{display:block}
+.card p{margin:3px 0 6px;color:var(--mut);font-size:.88rem}
+.card small{display:inline-block;margin-right:10px;font-size:.8rem;color:var(--mut)}
+.late{color:var(--bad)!important;font-weight:600}
+.list{padding:0 16px 24px;max-width:760px}
+.list h2{font-size:1rem;margin:18px 0 8px}
+.row{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.row span{color:var(--mut);font-size:.88rem}
+.empty{color:var(--mut);padding:8px 2px}
+dialog{border:0;border-radius:14px;padding:20px;width:min(520px,94vw);max-height:92vh}
+dialog::backdrop{background:rgba(10,30,32,.5)}
+dialog h2{margin:0 0 4px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.notes{margin-top:10px;font-size:.88rem;background:var(--bg);border-radius:8px;padding:8px 10px;max-height:150px;overflow:auto}
+.notes div{margin-bottom:6px}.notes em{color:var(--mut);font-style:normal;font-size:.78rem}
+.acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.acts .sp{flex:1}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form id="lf">
+    <h1>CRM Donaciones</h1>
+    <p>Inicia sesión para continuar.</p>
+    <label for="em">Correo</label><input id="em" type="email" required autocomplete="username">
+    <label for="pw">Contraseña</label><input id="pw" type="password" required autocomplete="current-password">
+    <button>Iniciar sesión</button>
+    <div id="err" role="alert"></div>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>CRM Donaciones</h1>
+    <small id="who"></small>
+    <button id="csv">Exportar a Excel</button>
+    <button id="out">Cerrar sesión</button>
+  </header>
+  <div class="bar">
+    <div class="tabs">
+      <button id="t1" class="on">Tablero</button>
+      <button id="t2">Recordatorios</button>
+    </div>
+    <input id="q" type="search" placeholder="Buscar empresa, contacto o donación">
+    <button id="new">Nueva donación</button>
+  </div>
+  <main id="main"></main>
+</div>
+
+<dialog id="dlg">
+  <h2 id="dt">Nueva donación</h2>
+  <label for="f_empresa">Empresa</label><input id="f_empresa">
+  <div class="g2">
+    <div><label for="f_contacto">Contacto</label><input id="f_contacto"></div>
+    <div><label for="f_tel">Teléfono</label><input id="f_tel" type="tel"></div>
+  </div>
+  <label for="f_correo">Correo del contacto</label><input id="f_correo" type="email">
+  <label for="f_donacion">Qué se solicita o dona</label><input id="f_donacion">
+  <div class="g2">
+    <div><label for="f_monto">Valor aproximado (Q)</label><input id="f_monto" type="number" min="0" step="any"></div>
+    <div><label for="f_etapa">Etapa</label><select id="f_etapa"></select></div>
+  </div>
+  <label for="f_seg">Próximo seguimiento</label><input id="f_seg" type="date">
+  <label for="f_nota">Agregar comentario</label><textarea id="f_nota" rows="2"></textarea>
+  <div class="notes" id="notes" hidden></div>
+  <div class="acts">
+    <button id="save">Guardar</button>
+    <button id="cancel" class="sec">Cancelar</button>
+    <span class="sp"></span>
+    <button id="del" class="del">Eliminar</button>
+  </div>
+</dialog>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,addDoc,updateDoc,deleteDoc,doc,onSnapshot,serverTimestamp,arrayUnion} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB1c8Ca4ZVRjyLu8X8GcG0U2qw1tbqeV2I",
+  authDomain: "crm-donaciones.firebaseapp.com",
+  projectId: "crm-donaciones",
+  storageBucket: "crm-donaciones.firebasestorage.app",
+  messagingSenderId: "955448876585",
+  appId: "1:955448876585:web:20f439b112212170738638"
+};
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app), col = collection(db,"donaciones");
+
+const ST = ["Prospecto","Contactado","Oficio enviado","En seguimiento","Confirmado","Recibido","Rechazado"];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+let data = [], unsub = null, cur = null, view = "tablero";
+
+$("#f_etapa").innerHTML = ST.map(s => `<option>${s}</option>`).join("");
+
+$("#lf").onsubmit = async e => {
+  e.preventDefault(); $("#err").textContent = "";
+  try { await signInWithEmailAndPassword(auth, $("#em").value.trim(), $("#pw").value); }
+  catch { $("#err").textContent = "Correo o contraseña incorrectos."; }
+};
+$("#out").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, u => {
+  $("#login").hidden = !!u; $("#app").hidden = !u;
+  if (unsub) { unsub(); unsub = null; }
+  if (u) {
+    $("#who").textContent = u.email;
+    unsub = onSnapshot(col, s => { data = s.docs.map(d => ({id:d.id, ...d.data()})); render(); },
+      e => alert("No se pudo leer la base de datos: " + e.message));
+  } else { data = []; $("#pw").value = ""; }
+});
+
+const card = d => {
+  const late = d.seguimiento && d.seguimiento < today() && !["Recibido","Rechazado"].includes(d.etapa);
+  return `<div class="card" draggable="true" data-id="${d.id}"><b>${esc(d.empresa)}</b>
+  ${d.donacion ? `<p>${esc(d.donacion)}</p>` : ""}
+  ${d.monto ? `<small>Q${Number(d.monto).toLocaleString("es-GT")}</small>` : ""}
+  ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}</div>`;
+};
+
+function render() {
+  const q = $("#q").value.toLowerCase();
+  const L = data.filter(d => [d.empresa,d.contacto,d.donacion].join(" ").toLowerCase().includes(q));
+  if (view === "tablero") {
+    $("#main").innerHTML = `<div class="board">` + ST.map(s => {
+      const c = L.filter(d => d.etapa === s);
+      return `<div class="col" data-s="${s}"><h3>${s}<span>${c.length}</span></h3>${c.map(card).join("")}</div>`;
+    }).join("") + `</div>`;
+  } else {
+    const t = today(), open = L.filter(d => d.seguimiento && !["Recibido","Rechazado"].includes(d.etapa)).sort((a,b) => a.seguimiento.localeCompare(b.seguimiento));
+    const grp = (title, arr) => `<h2>${title} (${arr.length})</h2>` + (arr.length ? arr.map(d =>
+      `<div class="row" data-id="${d.id}"><div><b>${esc(d.empresa)}</b><br><span>${esc(d.donacion)} · ${esc(d.contacto)} ${esc(d.telefono)}</span></div><span class="${d.seguimiento < t ? "late" : ""}">${d.seguimiento}</span></div>`).join("") : `<div class="empty">Sin pendientes.</div>`);
+    $("#main").innerHTML = `<div class="list">${grp("Vencidos", open.filter(d => d.seguimiento < t))}${grp("Hoy", open.filter(d => d.seguimiento === t))}${grp("Próximos", open.filter(d => d.seguimiento > t))}</div>`;
+  }
+}
+
+const main = $("#main");
+main.onclick = e => { const el = e.target.closest("[data-id]"); if (el) openDlg(data.find(d => d.id === el.dataset.id)); };
+main.ondragstart = e => { const c = e.target.closest(".card"); if (c) e.dataTransfer.setData("text/plain", c.dataset.id); };
+main.ondragover = e => { const c = e.target.closest(".col"); if (c) { e.preventDefault(); document.querySelectorAll(".col.over").forEach(x => x.classList.remove("over")); c.classList.add("over"); } };
+main.ondrop = async e => {
+  const c = e.target.closest(".col"); if (!c) return; e.preventDefault();
+  const id = e.dataTransfer.getData("text/plain");
+  try { await updateDoc(doc(db,"donaciones",id), {etapa: c.dataset.s}); } catch (x) { alert("No se pudo mover: " + x.message); }
+};
+main.ondragend = () => document.querySelectorAll(".col.over").forEach(x => x.classList.remove("over"));
+
+const tab = v => { view = v; $("#t1").classList.toggle("on", v === "tablero"); $("#t2").classList.toggle("on", v !== "tablero"); render(); };
+$("#t1").onclick = () => tab("tablero"); $("#t2").onclick = () => tab("recordatorios");
+$("#q").oninput = render;
+$("#new").onclick = () => openDlg(null);
+
+const F = ["empresa","contacto","tel","correo","donacion","monto","etapa","seg"];
+function openDlg(d) {
+  cur = d;
+  $("#dt").textContent = d ? d.empresa : "Nueva donación";
+  const m = {empresa:d?.empresa, contacto:d?.contacto, tel:d?.telefono, correo:d?.correo, donacion:d?.donacion, monto:d?.monto, etapa:d?.etapa || ST[0], seg:d?.seguimiento};
+  F.forEach(k => $("#f_" + k).value = m[k] ?? "");
+  $("#f_nota").value = "";
+  const n = d?.notas || [];
+  $("#notes").hidden = !n.length;
+  $("#notes").innerHTML = n.slice().reverse().map(x => `<div>${esc(x.t)}<br><em>${esc(x.u)} · ${new Date(x.d).toLocaleDateString("es-GT")}</em></div>`).join("");
+  $("#del").hidden = !d;
+  $("#dlg").showModal();
+}
+$("#cancel").onclick = () => $("#dlg").close();
+
+$("#save").onclick = async () => {
+  const v = {empresa:$("#f_empresa").value.trim(), contacto:$("#f_contacto").value.trim(), telefono:$("#f_tel").value.trim(), correo:$("#f_correo").value.trim(),
+    donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
+  if (!v.empresa) { alert("Escribe el nombre de la empresa."); return; }
+  const n = $("#f_nota").value.trim(), nota = {t:n, u:auth.currentUser.email, d:new Date().toISOString()};
+  try {
+    if (cur) { if (n) v.notas = arrayUnion(nota); await updateDoc(doc(db,"donaciones",cur.id), v); }
+    else { v.notas = n ? [nota] : []; v.responsable = auth.currentUser.email; v.creado = serverTimestamp(); await addDoc(col, v); }
+    $("#dlg").close();
+  } catch (x) { alert("No se pudo guardar: " + x.message); }
+};
+$("#del").onclick = async () => {
+  if (!cur || !confirm("¿Eliminar esta donación? No se puede deshacer.")) return;
+  try { await deleteDoc(doc(db,"donaciones",cur.id)); $("#dlg").close(); } catch (x) { alert("No se pudo eliminar: " + x.message); }
+};
+
+$("#csv").onclick = () => {
+  const h = ["Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
+  const r = data.map(d => [d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
+  const csv = [h,...r].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
+  a.download = "donaciones-" + today() + ".csv"; a.click();
+};
+</script>
+</body>
+</html>
