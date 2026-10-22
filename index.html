@@ -29,6 +29,10 @@ header h1{margin:0;font-size:1.15rem;flex:1;min-width:140px}
 header button{background:rgba(255,255,255,.16)}
 header button:hover{background:rgba(255,255,255,.28)}
 header small{opacity:.85}
+.ptabs{display:flex;gap:6px;padding:12px 16px 0;overflow-x:auto}
+.ptabs button{background:#fff;color:var(--pri);border:1px solid var(--line);white-space:nowrap}
+.ptabs button.on{background:var(--pri);color:#fff}
+.ptabs button.add{background:transparent;border:1px dashed var(--pri)}
 .bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;align-items:center}
 .bar input{max-width:260px}
 .tabs{display:flex;gap:6px;margin-right:auto}
@@ -78,6 +82,7 @@ dialog h2{margin:0 0 4px}
     <button id="csv">Exportar a Excel</button>
     <button id="out">Cerrar sesión</button>
   </header>
+  <div class="ptabs" id="ptabs"></div>
   <div class="bar">
     <div class="tabs">
       <button id="t1" class="on">Tablero</button>
@@ -91,6 +96,7 @@ dialog h2{margin:0 0 4px}
 
 <dialog id="dlg">
   <h2 id="dt">Nueva donación</h2>
+  <label for="f_proyecto">Proyecto</label><select id="f_proyecto"></select>
   <label for="f_empresa">Empresa</label><input id="f_empresa">
   <div class="g2">
     <div><label for="f_contacto">Contacto</label><input id="f_contacto"></div>
@@ -126,13 +132,13 @@ const firebaseConfig = {
   messagingSenderId: "955448876585",
   appId: "1:955448876585:web:20f439b112212170738638"
 };
-const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app), col = collection(db,"donaciones");
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app), col = collection(db,"donaciones"), pcol = collection(db,"proyectos");
 
 const ST = ["Prospecto","Contactado","Oficio enviado","En seguimiento","Confirmado","Recibido","Rechazado"];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
-let data = [], unsub = null, cur = null, view = "tablero";
+let data = [], unsub = null, unsub2 = null, projs = [], pv = "todos", cur = null, view = "tablero";
 
 $("#f_etapa").innerHTML = ST.map(s => `<option>${s}</option>`).join("");
 
@@ -146,11 +152,17 @@ $("#out").onclick = () => signOut(auth);
 onAuthStateChanged(auth, u => {
   $("#login").hidden = !!u; $("#app").hidden = !u;
   if (unsub) { unsub(); unsub = null; }
+  if (unsub2) { unsub2(); unsub2 = null; }
   if (u) {
     $("#who").textContent = u.email;
+    unsub2 = onSnapshot(pcol, s => {
+      projs = s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => a.nombre.localeCompare(b.nombre));
+      if (!["todos","sin"].includes(pv) && !projs.find(p => p.id === pv)) pv = "todos";
+      render();
+    }, e => alert("No se pudieron leer los proyectos: " + e.message));
     unsub = onSnapshot(col, s => { data = s.docs.map(d => ({id:d.id, ...d.data()})); render(); },
       e => alert("No se pudo leer la base de datos: " + e.message));
-  } else { data = []; $("#pw").value = ""; }
+  } else { data = []; projs = []; $("#pw").value = ""; }
 });
 
 const card = d => {
@@ -161,9 +173,31 @@ const card = d => {
   ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}</div>`;
 };
 
+const noP = d => !d.proyecto || !projs.find(p => p.id === d.proyecto);
+const inP = d => pv === "todos" || (pv === "sin" ? noP(d) : d.proyecto === pv);
+const pname = id => projs.find(p => p.id === id)?.nombre || "Sin proyecto";
+function tabsHtml() {
+  const t = [["todos","Todos"], ...projs.map(p => [p.id,p.nombre]), ...(data.some(noP) ? [["sin","Sin proyecto"]] : [])];
+  return t.map(([k,n]) => `<button data-p="${k}" class="${pv === k ? "on" : ""}">${esc(n)}</button>`).join("")
+    + `<button class="add" id="np">+ Proyecto</button>` + (projs.find(p => p.id === pv) ? `<button class="add" id="rp">Renombrar</button>` : "");
+}
+$("#ptabs").onclick = async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  try {
+    if (b.dataset.p) { pv = b.dataset.p; render(); }
+    else if (b.id === "np") {
+      const n = prompt("Nombre del nuevo proyecto (ej. Cena Navideña)");
+      if (n && n.trim()) { const ref = await addDoc(pcol, {nombre:n.trim(), creado:serverTimestamp()}); pv = ref.id; render(); }
+    } else if (b.id === "rp") {
+      const n = prompt("Nuevo nombre del proyecto", pname(pv));
+      if (n && n.trim()) await updateDoc(doc(db,"proyectos",pv), {nombre:n.trim()});
+    }
+  } catch (x) { alert("No se pudo guardar el proyecto: " + x.message); }
+};
 function render() {
+  $("#ptabs").innerHTML = tabsHtml();
   const q = $("#q").value.toLowerCase();
-  const L = data.filter(d => [d.empresa,d.contacto,d.donacion].join(" ").toLowerCase().includes(q));
+  const L = data.filter(inP).filter(d => [d.empresa,d.contacto,d.donacion].join(" ").toLowerCase().includes(q));
   if (view === "tablero") {
     $("#main").innerHTML = `<div class="board">` + ST.map(s => {
       const c = L.filter(d => d.etapa === s);
@@ -196,6 +230,8 @@ $("#new").onclick = () => openDlg(null);
 const F = ["empresa","contacto","tel","correo","donacion","monto","etapa","seg"];
 function openDlg(d) {
   cur = d;
+  $("#f_proyecto").innerHTML = `<option value="">Sin proyecto</option>` + projs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join("");
+  $("#f_proyecto").value = d ? (d.proyecto || "") : (projs.find(p => p.id === pv) ? pv : "");
   $("#dt").textContent = d ? d.empresa : "Nueva donación";
   const m = {empresa:d?.empresa, contacto:d?.contacto, tel:d?.telefono, correo:d?.correo, donacion:d?.donacion, monto:d?.monto, etapa:d?.etapa || ST[0], seg:d?.seguimiento};
   F.forEach(k => $("#f_" + k).value = m[k] ?? "");
@@ -210,7 +246,7 @@ $("#cancel").onclick = () => $("#dlg").close();
 
 $("#save").onclick = async () => {
   const v = {empresa:$("#f_empresa").value.trim(), contacto:$("#f_contacto").value.trim(), telefono:$("#f_tel").value.trim(), correo:$("#f_correo").value.trim(),
-    donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
+    donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, proyecto:$("#f_proyecto").value, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
   if (!v.empresa) { alert("Escribe el nombre de la empresa."); return; }
   const n = $("#f_nota").value.trim(), nota = {t:n, u:auth.currentUser.email, d:new Date().toISOString()};
   try {
@@ -225,8 +261,8 @@ $("#del").onclick = async () => {
 };
 
 $("#csv").onclick = () => {
-  const h = ["Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
-  const r = data.map(d => [d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
+  const h = ["Proyecto","Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
+  const r = data.filter(inP).map(d => [pname(d.proyecto),d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
   const csv = [h,...r].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
