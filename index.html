@@ -44,7 +44,12 @@ header small{opacity:.85}
 .col h3 span{color:var(--mut);font-weight:400}
 .col.over{outline:2px dashed var(--pri)}
 .card{background:var(--card);border-radius:10px;padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);cursor:pointer}
+.card{border-left:6px solid var(--c,#94a3b8)}
 .card b{display:block}
+.chip{display:inline-block;font-size:.72rem;color:#fff;background:var(--c,#64748b);border-radius:99px;padding:1px 9px;margin-bottom:4px}
+.utabs{display:flex;gap:6px;padding:8px 16px 0;overflow-x:auto}
+.utabs button{background:#fff;color:var(--ink);border:1px solid var(--line);border-left:6px solid var(--c,#94a3b8);white-space:nowrap}
+.utabs button.on{background:var(--c,var(--pri));color:#fff;border-color:var(--c,var(--pri))}
 .card p{margin:3px 0 6px;color:var(--mut);font-size:.88rem}
 .card small{display:inline-block;margin-right:10px;font-size:.8rem;color:var(--mut)}
 .late{color:var(--bad)!important;font-weight:600}
@@ -79,10 +84,12 @@ dialog h2{margin:0 0 4px}
   <header>
     <h1>CRM Donaciones</h1>
     <small id="who"></small>
+    <button id="eq" hidden>Equipo</button>
     <button id="csv">Exportar a Excel</button>
     <button id="out">Cerrar sesión</button>
   </header>
   <div class="ptabs" id="ptabs"></div>
+  <div class="utabs" id="utabs"></div>
   <div class="bar">
     <div class="tabs">
       <button id="t1" class="on">Tablero</button>
@@ -96,6 +103,7 @@ dialog h2{margin:0 0 4px}
 
 <dialog id="dlg">
   <h2 id="dt">Nueva donación</h2>
+  <div id="rwrap"><label for="f_resp">Responsable</label><select id="f_resp"></select></div>
   <label for="f_proyecto">Proyecto</label><select id="f_proyecto"></select>
   <label for="f_empresa">Empresa</label><input id="f_empresa">
   <div class="g2">
@@ -119,10 +127,20 @@ dialog h2{margin:0 0 4px}
   </div>
 </dialog>
 
+<dialog id="dlg2">
+  <h2>Equipo</h2>
+  <p style="color:var(--mut);font-size:.85rem;margin:0 0 6px">Toca una persona para editarla, o escribe un correo nuevo.</p>
+  <div class="notes" id="eqlist" style="max-height:200px"></div>
+  <label for="e_email">Correo</label><input id="e_email" type="email">
+  <label for="e_nombre">Nombre</label><input id="e_nombre">
+  <label for="e_color">Color</label><input id="e_color" type="color" value="#1d4ed8">
+  <div class="acts"><button id="e_save">Guardar persona</button><button id="e_close" class="sec">Cerrar</button></div>
+</dialog>
+
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,addDoc,updateDoc,deleteDoc,doc,onSnapshot,serverTimestamp,arrayUnion} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,addDoc,updateDoc,deleteDoc,doc,setDoc,onSnapshot,serverTimestamp,arrayUnion} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB1c8Ca4ZVRjyLu8X8GcG0U2qw1tbqeV2I",
@@ -132,13 +150,14 @@ const firebaseConfig = {
   messagingSenderId: "955448876585",
   appId: "1:955448876585:web:20f439b112212170738638"
 };
-const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app), col = collection(db,"donaciones"), pcol = collection(db,"proyectos");
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app), col = collection(db,"donaciones"), pcol = collection(db,"proyectos"), ecol = collection(db,"equipo");
+const ADMINS = {"cnoguera@muniguate.com":{nombre:"Cecia Noguera",color:"#7b3fa0"},"acu@muniguate.com":{nombre:"Angel Herrera",color:"#0f5c63"},"jraijall@muniguate.com":{nombre:"Alejandro Meneses",color:"#c2410c"}};
 
 const ST = ["Prospecto","Contactado","Oficio enviado","En seguimiento","Confirmado","Recibido","Rechazado"];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
-let data = [], unsub = null, unsub2 = null, projs = [], pv = "todos", cur = null, view = "tablero";
+let data = [], unsub = null, unsub2 = null, projs = [], pv = "todos", unsub3 = null, equipo = {}, me = "", isAdmin = false, uv = "todos", cur = null, view = "tablero";
 
 $("#f_etapa").innerHTML = ST.map(s => `<option>${s}</option>`).join("");
 
@@ -153,8 +172,11 @@ onAuthStateChanged(auth, u => {
   $("#login").hidden = !!u; $("#app").hidden = !u;
   if (unsub) { unsub(); unsub = null; }
   if (unsub2) { unsub2(); unsub2 = null; }
+  if (unsub3) { unsub3(); unsub3 = null; }
   if (u) {
     $("#who").textContent = u.email;
+    me = u.email.toLowerCase(); isAdmin = !!ADMINS[me]; uv = me; $("#eq").hidden = !isAdmin;
+    unsub3 = onSnapshot(ecol, s => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); render(); }, () => {});
     unsub2 = onSnapshot(pcol, s => {
       projs = s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => a.nombre.localeCompare(b.nombre));
       if (!["todos","sin"].includes(pv) && !projs.find(p => p.id === pv)) pv = "todos";
@@ -162,24 +184,43 @@ onAuthStateChanged(auth, u => {
     }, e => alert("No se pudieron leer los proyectos: " + e.message));
     unsub = onSnapshot(col, s => { data = s.docs.map(d => ({id:d.id, ...d.data()})); render(); },
       e => alert("No se pudo leer la base de datos: " + e.message));
-  } else { data = []; projs = []; $("#pw").value = ""; }
+  } else { data = []; projs = []; equipo = {}; $("#pw").value = ""; }
 });
 
 const card = d => {
   const late = d.seguimiento && d.seguimiento < today() && !["Recibido","Rechazado"].includes(d.etapa);
-  return `<div class="card" draggable="true" data-id="${d.id}"><b>${esc(d.empresa)}</b>
+  return `<div class="card" draggable="${canEdit(d)}" data-id="${d.id}" style="--c:${person(d.responsable).color}"><span class="chip">${esc(person(d.responsable).nombre)}</span><b>${esc(d.empresa)}</b>
   ${d.donacion ? `<p>${esc(d.donacion)}</p>` : ""}
   ${d.monto ? `<small>Q${Number(d.monto).toLocaleString("es-GT")}</small>` : ""}
   ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}</div>`;
 };
 
+const lc = x => (x || "").toLowerCase();
+const team = () => {
+  const m = {}; Object.entries(ADMINS).forEach(([k,v]) => m[k] = {...v});
+  Object.entries(equipo).forEach(([k,v]) => m[k] = {...(m[k] || {}), ...v});
+  data.forEach(d => { const k = lc(d.responsable); if (k && !m[k]) m[k] = {nombre:k.split("@")[0], color:"#64748b"}; });
+  if (me && !m[me]) m[me] = {nombre:me.split("@")[0], color:"#64748b"};
+  return m;
+};
+const person = e => team()[lc(e)] || {nombre:"Sin responsable", color:"#94a3b8"};
+const canEdit = d => isAdmin || lc(d.responsable) === me;
+const inU = d => uv === "todos" || (uv === "sin" ? !d.responsable : lc(d.responsable) === uv);
+function utabsHtml() {
+  const t = team(), n = k => data.filter(d => lc(d.responsable) === k).length;
+  const ks = Object.keys(t).sort((a,b) => (a === me ? -1 : b === me ? 1 : t[a].nombre.localeCompare(t[b].nombre)));
+  return `<button data-u="todos" class="${uv === "todos" ? "on" : ""}">Todos (${data.length})</button>`
+    + ks.map(k => `<button data-u="${esc(k)}" style="--c:${t[k].color}" class="${uv === k ? "on" : ""}">${esc(t[k].nombre)} (${n(k)})</button>`).join("")
+    + (data.some(d => !d.responsable) ? `<button data-u="sin" class="${uv === "sin" ? "on" : ""}">Sin responsable</button>` : "");
+}
+$("#utabs").onclick = e => { const b = e.target.closest("button"); if (b) { uv = b.dataset.u; render(); } };
 const noP = d => !d.proyecto || !projs.find(p => p.id === d.proyecto);
 const inP = d => pv === "todos" || (pv === "sin" ? noP(d) : d.proyecto === pv);
 const pname = id => projs.find(p => p.id === id)?.nombre || "Sin proyecto";
 function tabsHtml() {
   const t = [["todos","Todos"], ...projs.map(p => [p.id,p.nombre]), ...(data.some(noP) ? [["sin","Sin proyecto"]] : [])];
   return t.map(([k,n]) => `<button data-p="${k}" class="${pv === k ? "on" : ""}">${esc(n)}</button>`).join("")
-    + `<button class="add" id="np">+ Proyecto</button>` + (projs.find(p => p.id === pv) ? `<button class="add" id="rp">Renombrar</button>` : "");
+    + (isAdmin ? `<button class="add" id="np">+ Proyecto</button>` + (projs.find(p => p.id === pv) ? `<button class="add" id="rp">Renombrar</button>` : "") : "");
 }
 $("#ptabs").onclick = async e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -196,8 +237,9 @@ $("#ptabs").onclick = async e => {
 };
 function render() {
   $("#ptabs").innerHTML = tabsHtml();
+  $("#utabs").innerHTML = utabsHtml();
   const q = $("#q").value.toLowerCase();
-  const L = data.filter(inP).filter(d => [d.empresa,d.contacto,d.donacion].join(" ").toLowerCase().includes(q));
+  const L = data.filter(inP).filter(inU).filter(d => [d.empresa,d.contacto,d.donacion].join(" ").toLowerCase().includes(q));
   if (view === "tablero") {
     $("#main").innerHTML = `<div class="board">` + ST.map(s => {
       const c = L.filter(d => d.etapa === s);
@@ -206,14 +248,14 @@ function render() {
   } else {
     const t = today(), open = L.filter(d => d.seguimiento && !["Recibido","Rechazado"].includes(d.etapa)).sort((a,b) => a.seguimiento.localeCompare(b.seguimiento));
     const grp = (title, arr) => `<h2>${title} (${arr.length})</h2>` + (arr.length ? arr.map(d =>
-      `<div class="row" data-id="${d.id}"><div><b>${esc(d.empresa)}</b><br><span>${esc(d.donacion)} · ${esc(d.contacto)} ${esc(d.telefono)}</span></div><span class="${d.seguimiento < t ? "late" : ""}">${d.seguimiento}</span></div>`).join("") : `<div class="empty">Sin pendientes.</div>`);
+      `<div class="row" data-id="${d.id}"><div><b>${esc(d.empresa)}</b> <span style="color:${person(d.responsable).color}">● ${esc(person(d.responsable).nombre)}</span><br><span>${esc(d.donacion)} · ${esc(d.contacto)} ${esc(d.telefono)}</span></div><span class="${d.seguimiento < t ? "late" : ""}">${d.seguimiento}</span></div>`).join("") : `<div class="empty">Sin pendientes.</div>`);
     $("#main").innerHTML = `<div class="list">${grp("Vencidos", open.filter(d => d.seguimiento < t))}${grp("Hoy", open.filter(d => d.seguimiento === t))}${grp("Próximos", open.filter(d => d.seguimiento > t))}</div>`;
   }
 }
 
 const main = $("#main");
 main.onclick = e => { const el = e.target.closest("[data-id]"); if (el) openDlg(data.find(d => d.id === el.dataset.id)); };
-main.ondragstart = e => { const c = e.target.closest(".card"); if (c) e.dataTransfer.setData("text/plain", c.dataset.id); };
+main.ondragstart = e => { const c = e.target.closest(".card"); if (!c) return; const d = data.find(x => x.id === c.dataset.id); if (!d || !canEdit(d)) { e.preventDefault(); return; } e.dataTransfer.setData("text/plain", c.dataset.id); };
 main.ondragover = e => { const c = e.target.closest(".col"); if (c) { e.preventDefault(); document.querySelectorAll(".col.over").forEach(x => x.classList.remove("over")); c.classList.add("over"); } };
 main.ondrop = async e => {
   const c = e.target.closest(".col"); if (!c) return; e.preventDefault();
@@ -230,6 +272,10 @@ $("#new").onclick = () => openDlg(null);
 const F = ["empresa","contacto","tel","correo","donacion","monto","etapa","seg"];
 function openDlg(d) {
   cur = d;
+  const T = team();
+  $("#f_resp").innerHTML = `<option value="">Sin responsable</option>` + Object.keys(T).map(k => `<option value="${esc(k)}">${esc(T[k].nombre)}</option>`).join("");
+  $("#f_resp").value = d ? lc(d.responsable) : (T[uv] ? uv : me);
+  $("#rwrap").hidden = !isAdmin;
   $("#f_proyecto").innerHTML = `<option value="">Sin proyecto</option>` + projs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join("");
   $("#f_proyecto").value = d ? (d.proyecto || "") : (projs.find(p => p.id === pv) ? pv : "");
   $("#dt").textContent = d ? d.empresa : "Nueva donación";
@@ -239,7 +285,9 @@ function openDlg(d) {
   const n = d?.notas || [];
   $("#notes").hidden = !n.length;
   $("#notes").innerHTML = n.slice().reverse().map(x => `<div>${esc(x.t)}<br><em>${esc(x.u)} · ${new Date(x.d).toLocaleDateString("es-GT")}</em></div>`).join("");
-  $("#del").hidden = !d;
+  const ro = !!d && !canEdit(d);
+  document.querySelectorAll("#dlg input, #dlg select, #dlg textarea").forEach(x => x.disabled = ro);
+  $("#save").hidden = ro; $("#del").hidden = !d || ro;
   $("#dlg").showModal();
 }
 $("#cancel").onclick = () => $("#dlg").close();
@@ -250,8 +298,8 @@ $("#save").onclick = async () => {
   if (!v.empresa) { alert("Escribe el nombre de la empresa."); return; }
   const n = $("#f_nota").value.trim(), nota = {t:n, u:auth.currentUser.email, d:new Date().toISOString()};
   try {
-    if (cur) { if (n) v.notas = arrayUnion(nota); await updateDoc(doc(db,"donaciones",cur.id), v); }
-    else { v.notas = n ? [nota] : []; v.responsable = auth.currentUser.email; v.creado = serverTimestamp(); await addDoc(col, v); }
+    if (cur) { if (isAdmin) v.responsable = $("#f_resp").value; if (n) v.notas = arrayUnion(nota); await updateDoc(doc(db,"donaciones",cur.id), v); }
+    else { v.notas = n ? [nota] : []; v.responsable = isAdmin ? ($("#f_resp").value || me) : me; v.creado = serverTimestamp(); await addDoc(col, v); }
     $("#dlg").close();
   } catch (x) { alert("No se pudo guardar: " + x.message); }
 };
@@ -260,9 +308,21 @@ $("#del").onclick = async () => {
   try { await deleteDoc(doc(db,"donaciones",cur.id)); $("#dlg").close(); } catch (x) { alert("No se pudo eliminar: " + x.message); }
 };
 
+$("#eq").onclick = () => { drawEq(); $("#dlg2").showModal(); };
+$("#e_close").onclick = () => $("#dlg2").close();
+function drawEq() {
+  $("#eqlist").innerHTML = Object.entries(team()).map(([k,v]) => `<div data-k="${esc(k)}" style="cursor:pointer;margin-bottom:6px"><span style="color:${v.color}">●</span> ${esc(v.nombre)} <em>${esc(k)}${ADMINS[k] ? " · maestro" : ""}</em></div>`).join("");
+}
+$("#eqlist").onclick = e => { const el = e.target.closest("[data-k]"); if (!el) return; const v = team()[el.dataset.k]; $("#e_email").value = el.dataset.k; $("#e_nombre").value = v.nombre; $("#e_color").value = v.color; };
+$("#e_save").onclick = async () => {
+  const k = $("#e_email").value.trim().toLowerCase(), nombre = $("#e_nombre").value.trim();
+  if (!k || !nombre) { alert("Escribe el correo y el nombre."); return; }
+  try { await setDoc(doc(db,"equipo",k), {nombre, color:$("#e_color").value}); $("#e_email").value = ""; $("#e_nombre").value = ""; drawEq(); }
+  catch (x) { alert("No se pudo guardar: " + x.message); }
+};
 $("#csv").onclick = () => {
-  const h = ["Proyecto","Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
-  const r = data.filter(inP).map(d => [pname(d.proyecto),d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
+  const h = ["Proyecto","Responsable","Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
+  const r = data.filter(inP).filter(inU).map(d => [pname(d.proyecto),person(d.responsable).nombre,d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
   const csv = [h,...r].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
