@@ -117,6 +117,7 @@ dialog h2{margin:0 0 4px}
     <div><label for="f_etapa">Etapa</label><select id="f_etapa"></select></div>
   </div>
   <label for="f_seg">Próximo seguimiento</label><input id="f_seg" type="date">
+  <label style="display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--ink)"><input id="f_logo" type="checkbox" style="width:auto"> Se solicitó el logotipo de la empresa</label>
   <label for="f_nota">Agregar comentario</label><textarea id="f_nota" rows="2"></textarea>
   <div class="notes" id="notes" hidden></div>
   <div class="acts">
@@ -192,7 +193,7 @@ const card = d => {
   return `<div class="card" draggable="${canEdit(d)}" data-id="${d.id}" style="--c:${person(d.responsable).color}"><span class="chip">${esc(person(d.responsable).nombre)}</span><b>${esc(d.empresa)}</b>
   ${d.donacion ? `<p>${esc(d.donacion)}</p>` : ""}
   ${d.monto ? `<small>Q${Number(d.monto).toLocaleString("es-GT")}</small>` : ""}
-  ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}</div>`;
+  ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}${d.logo ? `<small>Logo solicitado ✓</small>` : ""}</div>`;
 };
 
 const lc = x => (x || "").toLowerCase();
@@ -282,6 +283,7 @@ function openDlg(d) {
   const m = {empresa:d?.empresa, contacto:d?.contacto, tel:d?.telefono, correo:d?.correo, donacion:d?.donacion, monto:d?.monto, etapa:d?.etapa || ST[0], seg:d?.seguimiento};
   F.forEach(k => $("#f_" + k).value = m[k] ?? "");
   $("#f_nota").value = "";
+  $("#f_logo").checked = !!d?.logo;
   const n = d?.notas || [];
   $("#notes").hidden = !n.length;
   $("#notes").innerHTML = n.slice().reverse().map(x => `<div>${esc(x.t)}<br><em>${esc(x.u)} · ${new Date(x.d).toLocaleDateString("es-GT")}</em></div>`).join("");
@@ -294,7 +296,7 @@ $("#cancel").onclick = () => $("#dlg").close();
 
 $("#save").onclick = async () => {
   const v = {empresa:$("#f_empresa").value.trim(), contacto:$("#f_contacto").value.trim(), telefono:$("#f_tel").value.trim(), correo:$("#f_correo").value.trim(),
-    donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, proyecto:$("#f_proyecto").value, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
+    donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, proyecto:$("#f_proyecto").value, logo:$("#f_logo").checked, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
   if (!v.empresa) { alert("Escribe el nombre de la empresa."); return; }
   const n = $("#f_nota").value.trim(), nota = {t:n, u:auth.currentUser.email, d:new Date().toISOString()};
   try {
@@ -321,8 +323,9 @@ $("#e_save").onclick = async () => {
   catch (x) { alert("No se pudo guardar: " + x.message); }
 };
 $("#csv").onclick = () => {
-  const h = ["Proyecto","Responsable","Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Responsable","Comentarios"];
-  const r = data.filter(inP).filter(inU).map(d => [pname(d.proyecto),person(d.responsable).nombre,d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.responsable,(d.notas||[]).map(x => x.t).join(" | ")]);
+  const dt = t => { if (!t || !t.toDate) return ""; const x = t.toDate(); return new Date(x.getTime() - x.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
+  const h = ["Proyecto","Responsable","Correo responsable","Empresa","Contacto","Teléfono","Correo","Donación","Valor (Q)","Etapa","Próximo seguimiento","Logo solicitado","Creado","Última actualización","Comentarios"];
+  const r = data.filter(inP).filter(inU).map(d => [pname(d.proyecto),person(d.responsable).nombre,d.responsable,d.empresa,d.contacto,d.telefono,d.correo,d.donacion,d.monto,d.etapa,d.seguimiento,d.logo ? "Sí" : "No",dt(d.creado),dt(d.actualizado),(d.notas||[]).map(x => x.t).join(" | ")]);
   const csv = [h,...r].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
