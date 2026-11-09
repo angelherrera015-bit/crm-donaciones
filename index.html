@@ -48,7 +48,20 @@ header small{opacity:.85}
 .card b{display:block}
 .logo{height:40px;width:auto;background:#fff;border-radius:10px;padding:5px 12px;display:block}
 .card p.dir{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:.8rem;color:var(--ink);margin:0 0 6px;border-left:2px solid var(--line);padding-left:6px}
-.stats{padding:0 16px 24px;max-width:1150px}
+.swrap{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;padding:0 16px 24px}
+.stats{flex:3 1 640px;min-width:0}
+.lists{flex:2 1 400px;min-width:0;max-width:640px;display:flex;flex-direction:column;gap:12px}
+.kpi[data-go]{cursor:pointer}
+.lp{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;scroll-margin-top:12px}
+.lp h2{font-size:1rem;margin:0;display:flex;align-items:center;gap:8px}
+.lp h2 button{margin-left:auto;padding:5px 12px;font-size:.8rem}
+.lbody{max-height:520px;overflow:auto;margin-top:10px}
+.li{border-left:6px solid var(--c,#94a3b8);background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.li b{display:block}
+.li small{color:var(--mut)}
+.li p{margin:3px 0 0;font-size:.85rem}
+.li p.cl{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.tag{display:inline-block;font-size:.7rem;color:#fff;border-radius:99px;padding:1px 9px;margin-right:6px}
 .stats .note{color:var(--mut);font-size:.9rem;margin:0 0 12px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
 .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;border-top:5px solid var(--c,var(--pri))}
@@ -275,19 +288,36 @@ function statsHtml() {
   const pc = n => N ? Math.round(n * 100 / N) : 0, dec = ok.length + no.length;
   const venc = act.filter(d => d.seguimiento && d.seguimiento < t).length, hoy = act.filter(d => d.seguimiento === t).length;
   const prox = act.filter(d => d.seguimiento > t && d.seguimiento <= w).length, sin = act.filter(d => !d.seguimiento).length;
-  const kp = (n, l, c) => `<div class="kpi" style="--c:${c}"><b>${n}</b><span>${l}</span></div>`;
+  const kp = (n, l, c, go) => `<div class="kpi" style="--c:${c}"${go ? ` data-go="${go}" role="button" tabindex="0"` : ""}><b>${n}</b><span>${l}</span></div>`;
   const etiqueta = (pv === "todos" ? "Todos los proyectos" : pv === "sin" ? "Sin proyecto" : pname(pv)) + " · " + (uv === "todos" ? "Todos los encargados" : uv === "sin" ? "Sin responsable" : person(uv).nombre);
   const T = team(), ppl = Object.keys(T).map(k => ({k, d:S.filter(x => lc(x.responsable) === k)})).filter(x => x.d.length).sort((a,b) => b.d.length - a.d.length);
   const hb = ppl.map(({k,d}) => { const o = d.filter(x => ["Confirmado","Recibido"].includes(x.etapa)).length, n = d.filter(x => x.etapa === "Rechazado").length, p = d.length - o - n, f = v => (v * 100 / d.length).toFixed(1);
     return `<div class="hb"><span style="color:${T[k].color}">●</span> <b>${esc(T[k].nombre)}</b> · ${d.length} empresas<div class="stk"><span style="width:${f(o)}%;background:#22c55e"></span><span style="width:${f(p)}%;background:#f59e0b"></span><span style="width:${f(n)}%;background:#dc2626"></span></div><span style="color:var(--mut)">${o} confirman · ${p} en proceso · ${n} dijeron que no</span></div>`; }).join("");
-  return `<div class="stats"><p class="note">Mostrando: <b>${esc(etiqueta)}</b>. Cambia el proyecto o el encargado con las pestañas de arriba.</p>
-  <div class="kpis">${kp(N,"Empresas en total","#0f5c63")}${kp(ok.length + " (" + pc(ok.length) + "%)","Donan o confirman","#22c55e")}${kp(no.length + " (" + pc(no.length) + "%)","Dijeron que no","#dc2626")}${kp(A.length + " (" + pc(A.length) + "%)","En proceso","#f59e0b")}${kp(dec ? Math.round(ok.length * 100 / dec) + "%" : "–","Aceptación entre las que ya respondieron","#6366f1")}${kp(ok.filter(d => d.logo).length + " de " + ok.length,"Logotipos solicitados (confirmadas)","#0f5c63")}</div>
+  const ord = {"Recibido":0,"Confirmado":1}, last = d => (d.notas && d.notas.length) ? d.notas[d.notas.length - 1].t : "";
+  const okL = ok.slice().sort((a,b) => ord[a.etapa] - ord[b.etapa] || (a.empresa || "").localeCompare(b.empresa || ""));
+  const noL = no.slice().sort((a,b) => (a.empresa || "").localeCompare(b.empresa || ""));
+  const rowOk = d => { const pe = person(d.responsable); return `<div class="li" data-id="${d.id}" style="--c:${pe.color}"><b>${esc(d.empresa)}</b><div><span class="tag" style="background:${SC[d.etapa]}">${d.etapa}</span><small style="color:${pe.color}"><b style="display:inline">${esc(pe.nombre)}</b></small>${d.monto ? ` <small>· Q${Number(d.monto).toLocaleString("es-GT")}</small>` : ""}${d.seguimiento ? ` <small>· ${d.seguimiento}</small>` : ""}</div><p>${esc(d.donacion) || "<em>Sin detalle de la donación</em>"}</p></div>`; };
+  const rowNo = d => { const pe = person(d.responsable); return `<div class="li" data-id="${d.id}" style="--c:${pe.color}"><b>${esc(d.empresa)}</b><div><span class="tag" style="background:${pe.color}">${esc(pe.nombre)}</span></div><p class="cl">${esc(last(d)) || "<em>Sin comentarios</em>"}</p></div>`; };
+  const listaOk = `<div class="lp" id="lst-ok" style="border-top:5px solid #22c55e"><h2>Donan o confirman (${okL.length})<button class="sec" data-x="ok">Excel</button></h2><div class="lbody">${okL.map(rowOk).join("") || '<div class="empty">Ninguna todavía.</div>'}</div></div>`;
+  const listaNo = `<div class="lp" id="lst-no" style="border-top:5px solid #dc2626"><h2>Dijeron que no (${noL.length})<button class="sec" data-x="no">Excel</button></h2><div class="lbody">${noL.map(rowNo).join("") || '<div class="empty">Ninguna.</div>'}</div></div>`;
+  return `<div class="swrap"><div class="stats"><p class="note">Mostrando: <b>${esc(etiqueta)}</b>. Cambia el proyecto o el encargado con las pestañas de arriba.</p>
+  <div class="kpis">${kp(N,"Empresas en total","#0f5c63")}${kp(ok.length + " (" + pc(ok.length) + "%)","Donan o confirman","#22c55e","lst-ok")}${kp(no.length + " (" + pc(no.length) + "%)","Dijeron que no","#dc2626","lst-no")}${kp(A.length + " (" + pc(A.length) + "%)","En proceso","#f59e0b")}${kp(dec ? Math.round(ok.length * 100 / dec) + "%" : "–","Aceptación entre las que ya respondieron","#6366f1")}${kp(ok.filter(d => d.logo).length + " de " + ok.length,"Logotipos solicitados (confirmadas)","#0f5c63")}</div>
   <div class="panels">
     <div class="panel"><h2>Empresas por etapa</h2>${donut(ST.map(s => ({t:s, n:S.filter(d => d.etapa === s).length, c:SC[s]})), N, "empresas")}</div>
-    <div class="panel"><h2>Resultado general</h2>${donut([{t:"Donan o confirman", n:ok.length, c:"#22c55e"},{t:"En proceso", n:A.length, c:"#f59e0b"},{t:"Dijeron que no", n:no.length, c:"#dc2626"}], pc(ok.length) + "%", "donan o confirman")}</div>
+    <div class="panel"><h2>Resultado general</h2>${donut([{t:"Donan o confirman", n:ok.length, c:"#22c55e"},{t:"En proceso", n:A.length, c:"#f59e0b"},{t:"Dijeron que no", n:no.length, c:"#dc2626"}], pc(ok.length) + "%", "confirman")}</div>
     <div class="panel"><h2>Seguimientos pendientes</h2><div class="fu"><span>Vencidos</span><b class="${venc ? "late" : ""}">${venc}</b></div><div class="fu"><span>Para hoy</span><b>${hoy}</b></div><div class="fu"><span>Próximos 7 días</span><b>${prox}</b></div><div class="fu"><span>Activas sin fecha de seguimiento</span><b>${sin}</b></div></div>
     <div class="panel" style="grid-column:1/-1"><h2>Por encargado</h2>${hb || '<div class="empty">Sin datos.</div>'}</div>
-  </div></div>`;
+  </div></div><div class="lists">${listaOk}${listaNo}</div></div>`;
+}
+function exportLista(k) {
+  const S = data.filter(inP).filter(inU);
+  const L = k === "ok" ? S.filter(d => ["Confirmado","Recibido"].includes(d.etapa)) : S.filter(d => d.etapa === "Rechazado");
+  const h = k === "ok" ? ["Proyecto","Encargado","Empresa","Etapa","Donación","Valor (Q)","Próximo seguimiento","Logo solicitado","Dirección confirmada"] : ["Proyecto","Encargado","Empresa","Último comentario","Todos los comentarios"];
+  const rows = L.map(d => k === "ok" ? [pname(d.proyecto),person(d.responsable).nombre,d.empresa,d.etapa,d.donacion,d.monto,d.seguimiento,d.logo ? "Sí" : "No",d.direccion] : [pname(d.proyecto),person(d.responsable).nombre,d.empresa,(d.notas || []).slice(-1).map(x => x.t).join(""),(d.notas || []).map(x => x.t).join(" | ")]);
+  const csv = [h,...rows].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
+  a.download = (k === "ok" ? "donan-o-confirman-" : "dijeron-que-no-") + today() + ".csv"; a.click();
 }
 function render() {
   $("#ptabs").innerHTML = tabsHtml();
@@ -308,7 +338,11 @@ function render() {
 }
 
 const main = $("#main");
-main.onclick = e => { const el = e.target.closest("[data-id]"); if (el) openDlg(data.find(d => d.id === el.dataset.id)); };
+main.onclick = e => {
+  const x = e.target.closest("[data-x]"); if (x) { exportLista(x.dataset.x); return; }
+  const g = e.target.closest("[data-go]"); if (g) { document.getElementById(g.dataset.go)?.scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  const el = e.target.closest("[data-id]"); if (el) openDlg(data.find(d => d.id === el.dataset.id));
+};
 main.ondragstart = e => { const c = e.target.closest(".card"); if (!c) return; const d = data.find(x => x.id === c.dataset.id); if (!d || !canEdit(d)) { e.preventDefault(); return; } e.dataTransfer.setData("text/plain", c.dataset.id); };
 main.ondragover = e => { const c = e.target.closest(".col"); if (c) { e.preventDefault(); document.querySelectorAll(".col.over").forEach(x => x.classList.remove("over")); c.classList.add("over"); } };
 main.ondrop = async e => {
