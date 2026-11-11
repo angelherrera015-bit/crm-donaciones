@@ -143,7 +143,8 @@ dialog h2{margin:0 0 4px}
 
 <dialog id="dlg">
   <h2 id="dt">Nueva donación</h2>
-  <div id="rwrap"><label for="f_resp">Responsable</label><select id="f_resp"></select></div>
+  <div id="rwrap"><label for="f_resp">Responsable</label><select id="f_resp"></select>
+  <label for="f_lleva">Quién lleva el contacto</label><select id="f_lleva"></select></div>
   <label for="f_proyecto">Proyecto</label><select id="f_proyecto"></select>
   <label for="f_empresa">Empresa</label><input id="f_empresa">
   <div class="g2">
@@ -204,7 +205,7 @@ const ST = ["Prospecto","Contactado","Oficio enviado","En seguimiento","Confirma
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
-let data = [], unsub = null, unsub2 = null, projs = [], pv = "todos", unsub3 = null, equipo = {}, me = "", isAdmin = false, uv = "todos", cur = null, view = "tablero";
+let data = [], unsub = null, unsub2 = null, projs = [], pv = "todos", unsub3 = null, equipo = {}, me = "", isAdmin = false, uv = "todos", soloMios = true, cur = null, view = "tablero";
 
 $("#f_etapa").innerHTML = ST.map(s => `<option>${s}</option>`).join("");
 
@@ -222,7 +223,7 @@ onAuthStateChanged(auth, u => {
   if (unsub3) { unsub3(); unsub3 = null; }
   if (u) {
     $("#who").textContent = u.email;
-    me = u.email.toLowerCase(); isAdmin = !!ADMINS[me]; uv = me; $("#eq").hidden = !isAdmin;
+    me = u.email.toLowerCase(); isAdmin = !!ADMINS[me]; uv = canon(me); $("#eq").hidden = !isAdmin;
     unsub3 = onSnapshot(ecol, s => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); render(); }, () => {});
     unsub2 = onSnapshot(pcol, s => {
       projs = s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => a.nombre.localeCompare(b.nombre));
@@ -240,23 +241,29 @@ const card = d => {
   ${d.donacion ? `<p>${esc(d.donacion)}</p>` : ""}
   ${d.direccion ? `<p class="dir"><strong>Dirección:</strong> ${esc(d.direccion)}</p>` : ""}
   ${d.monto ? `<small>Q${Number(d.monto).toLocaleString("es-GT")}</small>` : ""}
-  ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}${d.logo ? `<small>Logo solicitado ✓</small>` : ""}</div>`;
+  ${d.seguimiento ? `<small class="${late ? "late" : ""}">Seguimiento: ${d.seguimiento}</small>` : ""}${d.logo ? `<small>Logo solicitado ✓</small>` : ""}${nom1(lleva(d)) ? `<small>Contacto: ${esc(nom1(lleva(d)))}</small>` : ""}</div>`;
 };
 
 const lc = x => (x || "").toLowerCase();
+const PERFIL = "acu@muniguate.com", GRUPO = {"cnoguera@muniguate.com":PERFIL,"jraijall@muniguate.com":PERFIL};
+const canon = e => { const k = lc(e); return GRUPO[k] || k; };
+const lleva = d => lc(d.lleva) || (GRUPO[lc(d.responsable)] ? lc(d.responsable) : "");
+const esGrupo = () => canon(me) === PERFIL;
+const nom1 = k => (ADMINS[k] ? ADMINS[k].nombre.split(" ")[0] : "");
 const team = () => {
-  const m = {}; Object.entries(ADMINS).forEach(([k,v]) => m[k] = {...v});
-  Object.entries(equipo).forEach(([k,v]) => m[k] = {...(m[k] || {}), ...v});
-  data.forEach(d => { const k = lc(d.responsable); if (k && !m[k]) m[k] = {nombre:k.split("@")[0], color:"#64748b"}; });
-  if (me && !m[me]) m[me] = {nombre:me.split("@")[0], color:"#64748b"};
+  const m = {}; Object.entries(ADMINS).filter(([k]) => !GRUPO[k]).forEach(([k,v]) => m[k] = {...v});
+  if (m[PERFIL]) m[PERFIL].nombre = "Fortalecimiento de Programas";
+  Object.entries(equipo).filter(([k]) => !GRUPO[k]).forEach(([k,v]) => m[k] = {...(m[k] || {}), ...v});
+  data.forEach(d => { const k = canon(d.responsable); if (k && !m[k]) m[k] = {nombre:k.split("@")[0], color:"#64748b"}; });
+  if (me && !m[canon(me)]) m[canon(me)] = {nombre:me.split("@")[0], color:"#64748b"};
   return m;
 };
-const person = e => team()[lc(e)] || {nombre:"Sin responsable", color:"#94a3b8"};
+const person = e => team()[canon(e)] || {nombre:"Sin responsable", color:"#94a3b8"};
 const canEdit = d => isAdmin || lc(d.responsable) === me;
-const inU = d => uv === "todos" || (uv === "sin" ? !d.responsable : lc(d.responsable) === uv);
+const inU = d => uv === "todos" || (uv === "sin" ? !d.responsable : canon(d.responsable) === uv);
 function utabsHtml() {
-  const t = team(), n = k => data.filter(d => lc(d.responsable) === k).length;
-  const ks = Object.keys(t).sort((a,b) => (a === me ? -1 : b === me ? 1 : t[a].nombre.localeCompare(t[b].nombre)));
+  const t = team(), n = k => data.filter(d => canon(d.responsable) === k).length;
+  const ks = Object.keys(t).sort((a,b) => (a === canon(me) ? -1 : b === canon(me) ? 1 : t[a].nombre.localeCompare(t[b].nombre)));
   return `<button data-u="todos" class="${uv === "todos" ? "on" : ""}">Todos (${data.length})</button>`
     + ks.map(k => `<button data-u="${esc(k)}" style="--c:${t[k].color}" class="${uv === k ? "on" : ""}">${esc(t[k].nombre)} (${n(k)})</button>`).join("")
     + (data.some(d => !d.responsable) ? `<button data-u="sin" class="${uv === "sin" ? "on" : ""}">Sin responsable</button>` : "");
@@ -301,7 +308,7 @@ function statsHtml() {
   const prox = act.filter(d => d.seguimiento > t && d.seguimiento <= w).length, sin = act.filter(d => !d.seguimiento).length;
   const kp = (n, l, c, go) => `<div class="kpi" style="--c:${c}"${go ? ` data-go="${go}" role="button" tabindex="0"` : ""}><b>${n}</b><span>${l}</span></div>`;
   const etiqueta = (pv === "todos" ? "Todos los proyectos" : pv === "sin" ? "Sin proyecto" : pname(pv)) + " · " + (uv === "todos" ? "Todos los encargados" : uv === "sin" ? "Sin responsable" : person(uv).nombre);
-  const T = team(), ppl = Object.keys(T).map(k => ({k, d:S.filter(x => lc(x.responsable) === k)})).filter(x => x.d.length).sort((a,b) => b.d.length - a.d.length);
+  const T = team(), ppl = Object.keys(T).map(k => ({k, d:S.filter(x => canon(x.responsable) === k)})).filter(x => x.d.length).sort((a,b) => b.d.length - a.d.length);
   const hb = ppl.map(({k,d}) => { const o = d.filter(x => ["Confirmado","Recibido"].includes(x.etapa)).length, n = d.filter(x => x.etapa === "Rechazado").length, p = d.length - o - n, f = v => (v * 100 / d.length).toFixed(1);
     return `<div class="hb"><span style="color:${T[k].color}">●</span> <b>${esc(T[k].nombre)}</b> · ${d.length} empresas<div class="stk"><span style="width:${f(o)}%;background:#22c55e"></span><span style="width:${f(p)}%;background:#f59e0b"></span><span style="width:${f(n)}%;background:#dc2626"></span></div><span style="color:var(--mut)">${o} confirman · ${p} en proceso · ${n} dijeron que no</span></div>`; }).join("");
   const ord = {"Recibido":0,"Confirmado":1}, last = d => (d.notas && d.notas.length) ? d.notas[d.notas.length - 1].t : "";
@@ -342,14 +349,16 @@ function render() {
       return `<div class="col" data-s="${s}"><h3>${s}<span>${c.length}</span></h3>${c.map(card).join("")}</div>`;
     }).join("") + `</div>`;
   } else if (view === "recordatorios") {
-    const t = today(), open = L.filter(d => d.seguimiento && !["Recibido","Rechazado"].includes(d.etapa)).sort((a,b) => a.seguimiento.localeCompare(b.seguimiento));
+    const t = today(), open = L.filter(d => d.seguimiento && !["Recibido","Rechazado"].includes(d.etapa)).filter(d => !(esGrupo() && soloMios) || lleva(d) === me || (!lleva(d) && canon(d.responsable) === canon(me))).sort((a,b) => a.seguimiento.localeCompare(b.seguimiento));
+    const chk = esGrupo() ? `<label style="display:flex;align-items:center;gap:8px;padding:0 0 10px"><input type="checkbox" id="mine" ${soloMios ? "checked" : ""} style="width:auto"> Solo los seguimientos que yo llevo</label>` : "";
     const grp = (title, arr) => `<h2>${title} (${arr.length})</h2>` + (arr.length ? arr.map(d =>
       `<div class="row" data-id="${d.id}"><div><b>${esc(d.empresa)}</b> <span style="color:${person(d.responsable).color}">● ${esc(person(d.responsable).nombre)}</span><br><span>${esc(d.donacion)} · ${esc(d.contacto)} ${esc(d.telefono)}</span></div><span class="${d.seguimiento < t ? "late" : ""}">${d.seguimiento}</span></div>`).join("") : `<div class="empty">Sin pendientes.</div>`);
-    $("#main").innerHTML = `<div class="list">${grp("Vencidos", open.filter(d => d.seguimiento < t))}${grp("Hoy", open.filter(d => d.seguimiento === t))}${grp("Próximos", open.filter(d => d.seguimiento > t))}</div>`;
+    $("#main").innerHTML = `<div class="list">${chk}${grp("Vencidos", open.filter(d => d.seguimiento < t))}${grp("Hoy", open.filter(d => d.seguimiento === t))}${grp("Próximos", open.filter(d => d.seguimiento > t))}</div>`;
   } else { $("#main").innerHTML = statsHtml(); }
 }
 
 const main = $("#main");
+main.onchange = e => { if (e.target.id === "mine") { soloMios = e.target.checked; render(); } };
 main.onclick = e => {
   const x = e.target.closest("[data-x]"); if (x) { exportLista(x.dataset.x); return; }
   const g = e.target.closest("[data-go]"); if (g) { document.getElementById(g.dataset.go)?.scrollIntoView({behavior:"smooth", block:"start"}); return; }
@@ -374,8 +383,10 @@ function openDlg(d) {
   cur = d;
   const T = team();
   $("#f_resp").innerHTML = `<option value="">Sin responsable</option>` + Object.keys(T).map(k => `<option value="${esc(k)}">${esc(T[k].nombre)}</option>`).join("");
-  $("#f_resp").value = d ? lc(d.responsable) : (T[uv] ? uv : me);
+  $("#f_resp").value = d ? canon(d.responsable) : (T[uv] ? uv : canon(me));
   $("#rwrap").hidden = !isAdmin;
+  $("#f_lleva").innerHTML = `<option value="">Todo el grupo</option>` + [PERFIL, ...Object.keys(GRUPO)].map(k => `<option value="${k}">${esc(ADMINS[k].nombre)}</option>`).join("");
+  $("#f_lleva").value = d ? lleva(d) : "";
   $("#f_proyecto").innerHTML = `<option value="">Sin proyecto</option>` + projs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join("");
   $("#f_proyecto").value = d ? (d.proyecto || "") : (projs.find(p => p.id === pv) ? pv : "");
   $("#dt").textContent = d ? d.empresa : "Nueva donación";
@@ -399,9 +410,10 @@ $("#save").onclick = async () => {
     donacion:$("#f_donacion").value.trim(), monto:$("#f_monto").value, etapa:$("#f_etapa").value, proyecto:$("#f_proyecto").value, direccion:$("#f_dir").value.trim(), logo:$("#f_logo").checked, seguimiento:$("#f_seg").value, actualizado:serverTimestamp()};
   if (!v.empresa) { alert("Escribe el nombre de la empresa."); return; }
   const n = $("#f_nota").value.trim(), nota = {t:n, u:auth.currentUser.email, d:new Date().toISOString()};
+  if (isAdmin) v.lleva = $("#f_lleva").value;
   try {
     if (cur) { if (isAdmin) v.responsable = $("#f_resp").value; if (n) v.notas = arrayUnion(nota); await updateDoc(doc(db,"donaciones",cur.id), v); }
-    else { v.notas = n ? [nota] : []; v.responsable = isAdmin ? ($("#f_resp").value || me) : me; v.creado = serverTimestamp(); await addDoc(col, v); }
+    else { v.notas = n ? [nota] : []; v.responsable = isAdmin ? ($("#f_resp").value || canon(me)) : me; v.creado = serverTimestamp(); await addDoc(col, v); }
     $("#dlg").close();
   } catch (x) { alert("No se pudo guardar: " + x.message); }
 };
@@ -413,21 +425,21 @@ $("#del").onclick = async () => {
 $("#eq").onclick = () => { drawEq(); $("#e_del").hidden = true; $("#dlg2").showModal(); };
 $("#e_close").onclick = () => $("#dlg2").close();
 function drawEq() {
-  $("#eqlist").innerHTML = Object.entries(team()).map(([k,v]) => `<div data-k="${esc(k)}" style="cursor:pointer;margin-bottom:6px"><span style="color:${v.color}">●</span> ${esc(v.nombre)} <em>${esc(k)}${ADMINS[k] ? " · maestro" : ""}</em></div>`).join("");
+  $("#eqlist").innerHTML = Object.entries(team()).map(([k,v]) => `<div data-k="${esc(k)}" style="cursor:pointer;margin-bottom:6px"><span style="color:${v.color}">●</span> ${esc(v.nombre)} <em>${esc(k)}${k === PERFIL ? " · grupo maestro" : ""}</em></div>`).join("");
 }
 $("#eqlist").onclick = e => { const el = e.target.closest("[data-k]"); if (!el) return; const v = team()[el.dataset.k]; $("#e_email").value = el.dataset.k; $("#e_nombre").value = v.nombre; $("#e_color").value = v.color; showDel(el.dataset.k); };
 let eSel = "";
 function showDel(k) {
-  eSel = k; const T = team(), n = data.filter(d => lc(d.responsable) === k).length, blocked = !!ADMINS[k] || k === me;
+  eSel = k; const T = team(), n = data.filter(d => canon(d.responsable) === k).length, blocked = k === PERFIL;
   $("#e_del").hidden = false; $("#e_destw").hidden = blocked || !n; $("#e_rm").hidden = blocked;
-  $("#e_note").textContent = blocked ? "Los usuarios maestros y tu propia cuenta no se quitan desde aquí." : "Esto no cancela su acceso: para eso elimina su correo en Firebase → Authentication.";
+  $("#e_note").textContent = blocked ? "Fortalecimiento de Programas es el perfil del grupo maestro y no se quita desde aquí." : "Esto no cancela su acceso: para eso elimina su correo en Firebase → Authentication.";
   $("#e_dest").innerHTML = `<option value="">Sin responsable</option>` + Object.keys(T).filter(x => x !== k).map(x => `<option value="${esc(x)}">${esc(T[x].nombre)}</option>`).join("");
-  $("#e_dest").value = T[me] && me !== k ? me : "";
+  $("#e_dest").value = T[canon(me)] && canon(me) !== k ? canon(me) : "";
   $("#e_rm").textContent = n ? `Quitar del equipo y pasar sus ${n} donaciones` : "Quitar del equipo";
 }
 $("#e_rm").onclick = async () => {
   const k = eSel, T = team(), p = T[k]; if (!k || !p) return;
-  const mine = data.filter(d => lc(d.responsable) === k), dest = $("#e_dest").value;
+  const mine = data.filter(d => canon(d.responsable) === k), dest = $("#e_dest").value;
   const msg = `¿Quitar a ${p.nombre} del equipo?` + (mine.length ? `\n\nSus ${mine.length} donaciones pasarán a: ${dest ? T[dest].nombre : "Sin responsable"}.` : "") + `\n\nSu acceso (correo y contraseña) no se borra aquí; para cancelarlo, elimínalo en Firebase → Authentication.`;
   if (!confirm(msg)) return;
   try {
@@ -444,8 +456,8 @@ $("#e_save").onclick = async () => {
 };
 $("#csv").onclick = () => {
   const dt = t => { if (!t || !t.toDate) return ""; const x = t.toDate(); return new Date(x.getTime() - x.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
-  const h = ["Proyecto","Responsable","Correo responsable","Empresa","Contacto","Teléfono","Correo","Dirección confirmada","Donación","Valor (Q)","Etapa","Próximo seguimiento","Logo solicitado","Creado","Última actualización","Comentarios"];
-  const r = data.filter(inP).filter(inU).map(d => [pname(d.proyecto),person(d.responsable).nombre,d.responsable,d.empresa,d.contacto,d.telefono,d.correo,d.direccion,d.donacion,d.monto,d.etapa,d.seguimiento,d.logo ? "Sí" : "No",dt(d.creado),dt(d.actualizado),(d.notas||[]).map(x => x.t).join(" | ")]);
+  const h = ["Proyecto","Responsable","Correo responsable","Lleva el contacto","Empresa","Contacto","Teléfono","Correo","Dirección confirmada","Donación","Valor (Q)","Etapa","Próximo seguimiento","Logo solicitado","Creado","Última actualización","Comentarios"];
+  const r = data.filter(inP).filter(inU).map(d => [pname(d.proyecto),person(d.responsable).nombre,d.responsable,ADMINS[lleva(d)]?.nombre || "",d.empresa,d.contacto,d.telefono,d.correo,d.direccion,d.donacion,d.monto,d.etapa,d.seguimiento,d.logo ? "Sí" : "No",dt(d.creado),dt(d.actualizado),(d.notas||[]).map(x => x.t).join(" | ")]);
   const csv = [h,...r].map(a => a.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"}));
