@@ -16,6 +16,7 @@ button:hover{background:var(--pri2)}
 button.sec{background:#fff;color:var(--pri);border:1px solid var(--line)}
 button.del{background:#fff;color:var(--bad);border:1px solid var(--line)}
 :focus-visible{outline:3px solid #7cc4cb;outline-offset:2px}
+input[type=color]{height:42px;padding:3px;cursor:pointer}
 input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
 label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}
 #login{min-height:100vh;display:grid;place-items:center;padding:20px}
@@ -176,12 +177,17 @@ dialog h2{margin:0 0 4px}
   <label for="e_nombre">Nombre</label><input id="e_nombre">
   <label for="e_color">Color</label><input id="e_color" type="color" value="#1d4ed8">
   <div class="acts"><button id="e_save">Guardar persona</button><button id="e_close" class="sec">Cerrar</button></div>
+  <div id="e_del" hidden style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+    <div id="e_destw"><label for="e_dest">Al quitarla, pasar sus donaciones a</label><select id="e_dest"></select></div>
+    <div class="acts"><button id="e_rm" class="del">Quitar del equipo</button></div>
+    <p id="e_note" style="font-size:.82rem;color:var(--mut);margin:8px 0 0"></p>
+  </div>
 </dialog>
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,addDoc,updateDoc,deleteDoc,doc,setDoc,onSnapshot,serverTimestamp,arrayUnion} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,addDoc,updateDoc,deleteDoc,doc,setDoc,writeBatch,onSnapshot,serverTimestamp,arrayUnion} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB1c8Ca4ZVRjyLu8X8GcG0U2qw1tbqeV2I",
@@ -325,6 +331,7 @@ function exportLista(k) {
   a.download = (k === "ok" ? "donan-o-confirman-" : "dijeron-que-no-") + today() + ".csv"; a.click();
 }
 function render() {
+  if ($("#dlg2").open) drawEq();
   $("#ptabs").innerHTML = tabsHtml();
   $("#utabs").innerHTML = utabsHtml();
   const q = $("#q").value.toLowerCase();
@@ -403,12 +410,32 @@ $("#del").onclick = async () => {
   try { await deleteDoc(doc(db,"donaciones",cur.id)); $("#dlg").close(); } catch (x) { alert("No se pudo eliminar: " + x.message); }
 };
 
-$("#eq").onclick = () => { drawEq(); $("#dlg2").showModal(); };
+$("#eq").onclick = () => { drawEq(); $("#e_del").hidden = true; $("#dlg2").showModal(); };
 $("#e_close").onclick = () => $("#dlg2").close();
 function drawEq() {
   $("#eqlist").innerHTML = Object.entries(team()).map(([k,v]) => `<div data-k="${esc(k)}" style="cursor:pointer;margin-bottom:6px"><span style="color:${v.color}">●</span> ${esc(v.nombre)} <em>${esc(k)}${ADMINS[k] ? " · maestro" : ""}</em></div>`).join("");
 }
-$("#eqlist").onclick = e => { const el = e.target.closest("[data-k]"); if (!el) return; const v = team()[el.dataset.k]; $("#e_email").value = el.dataset.k; $("#e_nombre").value = v.nombre; $("#e_color").value = v.color; };
+$("#eqlist").onclick = e => { const el = e.target.closest("[data-k]"); if (!el) return; const v = team()[el.dataset.k]; $("#e_email").value = el.dataset.k; $("#e_nombre").value = v.nombre; $("#e_color").value = v.color; showDel(el.dataset.k); };
+let eSel = "";
+function showDel(k) {
+  eSel = k; const T = team(), n = data.filter(d => lc(d.responsable) === k).length, blocked = !!ADMINS[k] || k === me;
+  $("#e_del").hidden = false; $("#e_destw").hidden = blocked || !n; $("#e_rm").hidden = blocked;
+  $("#e_note").textContent = blocked ? "Los usuarios maestros y tu propia cuenta no se quitan desde aquí." : "Esto no cancela su acceso: para eso elimina su correo en Firebase → Authentication.";
+  $("#e_dest").innerHTML = `<option value="">Sin responsable</option>` + Object.keys(T).filter(x => x !== k).map(x => `<option value="${esc(x)}">${esc(T[x].nombre)}</option>`).join("");
+  $("#e_dest").value = T[me] && me !== k ? me : "";
+  $("#e_rm").textContent = n ? `Quitar del equipo y pasar sus ${n} donaciones` : "Quitar del equipo";
+}
+$("#e_rm").onclick = async () => {
+  const k = eSel, T = team(), p = T[k]; if (!k || !p) return;
+  const mine = data.filter(d => lc(d.responsable) === k), dest = $("#e_dest").value;
+  const msg = `¿Quitar a ${p.nombre} del equipo?` + (mine.length ? `\n\nSus ${mine.length} donaciones pasarán a: ${dest ? T[dest].nombre : "Sin responsable"}.` : "") + `\n\nSu acceso (correo y contraseña) no se borra aquí; para cancelarlo, elimínalo en Firebase → Authentication.`;
+  if (!confirm(msg)) return;
+  try {
+    for (let i = 0; i < mine.length; i += 400) { const b = writeBatch(db); mine.slice(i, i + 400).forEach(d => b.update(doc(db,"donaciones",d.id), {responsable:dest})); await b.commit(); }
+    await deleteDoc(doc(db,"equipo",k));
+    eSel = ""; $("#e_del").hidden = true; $("#e_email").value = ""; $("#e_nombre").value = "";
+  } catch (x) { alert("No se pudo quitar: " + x.message); }
+};
 $("#e_save").onclick = async () => {
   const k = $("#e_email").value.trim().toLowerCase(), nombre = $("#e_nombre").value.trim();
   if (!k || !nombre) { alert("Escribe el correo y el nombre."); return; }
